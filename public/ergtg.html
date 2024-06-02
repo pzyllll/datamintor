@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <title>Title</title>
+    <link rel="stylesheet" href="https://a.amap.com/jsapi_demos/static/demo-center/css/demo-center.css"/>
+</head>
+<script type="text/javascript">
+    window._AMapSecurityConfig = {
+        securityJsCode: 'd8ad21ae1d29f9152970eef25c6fcf34',
+    }
+</script>
+<script type="text/javascript"
+        src="https://webapi.amap.com/maps?v=1.4.15&key=填写您申请的高德地图key"></script>
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+    }
+    body,
+    html,
+    #container {
+        width: 100%;
+        height: 100%;
+    }
+    #as {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        z-index: 1;
+    }
+    div > ul > li {
+        float: left; /*使用组合选择器定位到第一级ul下一级的li，使其左浮动*/
+    }
+    li {
+        list-style: none; /*所有的项目都取消标记*/
+    }
+    li > ul {
+        display: none; /*使用组合选择器定位到li下一级的ul，使其隐藏*/
+    }
+    li:hover ul { /*使用伪类选择器设置悬停在li上面时显示ul*/
+        display: block;
+    }
+    .a {
+        text-decoration: none;
+        display: block;
+        font-size: 15px;
+        padding: 5px;
+        text-align: center;
+        color: yellowgreen;
+        background-color: gray;
+        cursor: pointer;
+    }
+    .a:hover { /*使用伪类选择器设置悬停在a上面时修改a的显示样式*/
+        color: papayawhip;
+    }
+</style>
+<body>
+<div id="as">
+    <ul>
+        <li><a id='t' class="a" onclick="tj()">添加图层</a>
+        </li>
+        <li><a class="a" onclick="clearMarker()">删除点标记</a>
+        </li>
+        <li><a class="a">路线规划方式</a>
+            <ul>
+                <li><a class="a" onclick="qtz()" style="font-size: 15px" title="先选起点，再选停靠点，最后选终点">起-停-终</a></li>
+                <li><a class="a" onclick="qzt()" style="font-size: 15px" title="先选择起点和终点，再选停靠点">起-终-停</a></li>
+            </ul>
+        </li>
+        <li><a class="a">路线生成</a>
+            <ul>
+                <li><a class="a" onclick="dh()" style="font-size: 15px">生成路线</a></li>
+            </ul>
+        </li>
+    </ul>
+</div>
+<div id="container"></div>
+</body>
+</html>
+<script>
+    //添加比例尺和罗盘插件
+    AMap.plugin(['AMap.Scale', 'AMap.ControlBar', 'AMap.MoveAnimation'],
+        function () {
+            map.addControl(new AMap.Scale());
+            map.addControl(new AMap.ControlBar());
+        });
+    //设置主视图
+    var map = new AMap.Map('container', {
+        zoom: 11,//级别
+        viewMode: '3D',
+        pitch: 45,
+        center: [116.379028, 39.865042],//中心点坐标
+    });
+    let markers = [];//用来存放点标注
+    let info = [];//用来保存点击标注产生的信息窗口
+    let geojson = new AMap.GeoJSON({
+        geojson: null,
+    });
+    //点击地图生成点标记
+    map.on('click', function (e) {
+        let marker = new AMap.Marker({
+            draggable: true,
+            position: e.lnglat,//位置
+            extData: {//自定义属性
+                _geoJsonProperties: {
+                    id: markers.length + 1,/*点标记的唯一识别码*/
+                    click: 0,/*点标记的点击次数*/
+                },
+            },
+        });
+        markers.push(marker);//创建一个点就加进去
+        geojson.addOverlay(marker);/*将一个点标记放到geojson中转站中*/
+        saveData(geojson.toGeoJSON());/*将geojson中转站内的标记全部保存到标准geoJSON数据*/
+        //点击点标记显示打卡次数
+        marker.on('click', function (e) {/*点击事件*/
+            let i = ++marker.getExtData()._geoJsonProperties.click;/*在某标签上点击一次对应的click加一次*/
+            info = new AMap.InfoWindow({
+                anchor: 'top-center',
+                content: `<div>${markers.indexOf(marker) + 1}打卡了${i}次</div>`
+            })
+            info.open(map, marker.getPosition());
+            saveData(geojson.toGeoJSON());/*将geojson中转站内的标记全部保存到标准geoJSON数据*/
+        })
+    });
+    //生成轨迹动画
+    let opts = {
+        waypoints: [],
+    }
+    let start = [];
+    let end = [];
+    //路线规划方法起点-停靠点-终点
+    function qtz() {
+        geojson.eachOverlay(function (item) {
+            //遍历geojson得到每一个点的坐标
+            opts.waypoints.push(item.getPosition());
+        })
+        start = opts.waypoints.shift();//删除数组最前面的对象，且返回该对象作为起点
+        end = opts.waypoints.pop();//删除数组最后面的对象，且返回该对象作为终点
+    }
+    //路线规划方法起点-终点-停靠点
+    function qzt() {
+        geojson.eachOverlay(function (item) {
+            //遍历geojson得到每一个地图上点的坐标
+            opts.waypoints.push(item.getPosition());
+        })
+        start = opts.waypoints.shift();//删除数组最前面的对象，且返回该对象作为起点
+        end = opts.waypoints.shift();//删除目前数组最前面的对象，且返回该对象作为终点
+        // 这时候opts中的数组对象只剩下中间点了
+    }
+    function dh() {
+        //如果判断到起点为0，则没有选择路线规划方法
+        if (start.length == 0) {
+            alert("请先选择路线规划方式！！！！");
+        }
+        //调用高德路线规划插件
+        AMap.plugin('AMap.Driving', function () {
+            let drivng = new AMap.Driving({
+                map: map,
+                //驾车测策
+                policy: AMap.DrivingPolicy.LEAST_TIME,
+            })
+            //设置规划路线方法，参数分别为起点，终点，中途点
+            drivng.search(start, end, opts, function (a, b) {
+                console.log(b);
+                //
+                var lineArr = [];
+                console.log(b.routes[0].steps);
+                //设置路线的样式
+                var passedPolyline = new AMap.Polyline({
+                    map: map,
+                    strokeColor: "#AF5",  //线颜色
+                    strokeWeight: 6,      //线宽
+                });
+            })
+        })
+    }
+    function clearMarker() {
+        AMap.GeoJSON();//中转站清空，这样下次新生成的点标注就不会把之前中转站的旧数据存入JSON中
+        map.remove(markers);//移除所有标记
+        markers = [];//将数组清空
+        map.remove(info);//打卡信息框删除
+        localStorage.clear();/*清除所有已经保存的JSON字符串*/
+    }
+    map.add(geojson);
+    if (JSON.stringify(getData()) != '[]') {
+        //导入数据
+        geojson.importData(getData());
+        //恢复旧数据的点击事件
+        geojson.eachOverlay(function (item) {
+            item.on('click', function (e) {
+                let i = ++item.getExtData()._geoJsonProperties.click;/*在某标签上点击一次对应的click加一次*/
+                let info = new AMap.InfoWindow({
+                    anchor: 'top-center',
+                    content: `<div>${markers.indexOf(marker) + 1}打卡了${i}次</div>`
+                })
+                info.open(map, item.getPosition());
+                saveData(geojson.toGeoJSON());/*将点标签内的新属性转换到标准geoJSON数据*/
+            });
+        })
+    }
+    //在localstorage中操作数据
+    function getData() {
+        if (!localStorage.getItem('geojson')) {
+            localStorage.setItem('geojson', '[]');/*如果不存在数据则返回js空对象*/
+        }
+        return JSON.parse(localStorage.getItem('geojson'));
+    }
+    function saveData(data) {/*保存JSON字符串*/
+        localStorage.setItem('geojson', JSON.stringify(data));/*保存为JSON字符串*/
+    }
+    //引入新图层
+    let ss = new AMap.TileLayer.Traffic({
+        zIndex: 10,
+        autoRefresh: true,
+        interval: 180,
+    });
+    //添加移除图层
+    let f = true;
+    function tj() {
+        if (f) {
+            map.add(ss);
+            document.querySelector("#t").innerText = '移除图层';
+            f = false;
+        } else {
+            map.remove(ss);
+            document.querySelector("#t").innerText = '添加图层';
+            f = true;
+        }
+    }
+</script>
+ 
